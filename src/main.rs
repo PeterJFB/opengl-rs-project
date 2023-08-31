@@ -177,41 +177,61 @@ fn main() {
 
         // == // Set up your VAO around here
 
-        let t_height = 0.3;
-        let t_width = 0.3;
+        // TASK 2 a)
+        let n_triangle_rows = 3;
+        let width = 1.;
+        let height = 1.;
 
-        let n_bottom = 3;
+        let t_width = width / n_triangle_rows as f32;
+        let t_height = height / n_triangle_rows as f32;
 
-        let n_tri_coords = 3 * 3;
+        let n_triangles = n_triangle_rows * (n_triangle_rows + 1) / 2;
+        let n_vertex_rows = n_triangle_rows + 1;
+        let n_verticies = n_vertex_rows * (n_vertex_rows + 1) / 2;
+        let mut verticies = vec![0.; n_verticies * 3];
+        let mut indicies = vec![0; n_triangles * 3];
 
-        let mut verticies = vec![0.0; n_tri_coords * n_bottom];
+        let vertex_row_start_y = height / 2.;
+        for vertex_row in 0..n_vertex_rows {
+            let vertex_row_f = vertex_row as f32;
+            let vertex_row_y = vertex_row_start_y - vertex_row_f * t_height;
 
-        for i in 0..n_bottom {
-            let n = i as f32;
-            // Left
-            verticies[0 + i * n_tri_coords] = t_width * n - 2. * t_width + 0.1 * (n - 1.);
-            verticies[1 + i * n_tri_coords] = 0.;
-            verticies[2 + i * n_tri_coords] = 0.;
+            let vertex_row_start_x = -t_width * vertex_row_f / 2.;
 
-            // Right
-            verticies[3 + i * n_tri_coords] = t_width * n - t_width + 0.1 * (n - 1.);
-            verticies[4 + i * n_tri_coords] = 0.;
-            verticies[5 + i * n_tri_coords] = 0.;
+            let vertex_row_index = if vertex_row == 0 {
+                0
+            } else {
+                (vertex_row + 1) * vertex_row / 2
+            };
+            for vertex in 0..(vertex_row + 1) {
+                let vertex_f = vertex as f32;
+                let vertex_index = vertex_row_index * 3 + vertex * 3;
+                verticies[0 + vertex_index] = vertex_row_start_x + vertex_f * t_width;
+                verticies[1 + vertex_index] = vertex_row_y;
+                verticies[2 + vertex_index] = 0.;
 
-            //Top
-            verticies[6 + i * n_tri_coords] = t_width * (0.5 + n) - 2. * t_width + 0.1 * (n - 1.);
-            verticies[7 + i * n_tri_coords] = t_height;
-            verticies[8 + i * n_tri_coords] = 0.;
+                if vertex_row < n_vertex_rows - 1 {
+                    indicies[0 + vertex_index] = (vertex_row_index + vertex) as u32;
+                    indicies[1 + vertex_index] =
+                        (vertex_row_index + vertex_row + 1 + vertex) as u32;
+                    indicies[2 + vertex_index] =
+                        (vertex_row_index + vertex_row + 1 + vertex + 1) as u32;
+                }
+            }
         }
 
-        println!("{}", verticies.len());
+        // TASK 2 a)
+        // let verticies = vec![0.6, -0.8, -1.2, 0., 0.4, 0., -0.8, -0.2, 1.2];
+        // let indicies = vec![0, 1, 2];
 
-        let indicies: Vec<u32> = (0..(verticies.len() as u32 / 3)).collect();
+        // TASK 2 b)
+        // let front_facing_indicies = vec![0, 1, 2]; // [1, 2, 0], [2, 0, 1]
+        // let back_facing_indicies = vec![2, 1, 0]; // [1, 0, 2], [0, 2, 1]
+        // indicies.splice(0..3, back_facing_indicies);
 
         let my_vao = unsafe { create_vao(&verticies, &indicies) };
 
         // == // Set up your shaders here
-
         let simple_shader = unsafe {
             shader::ShaderBuilder::new()
                 .attach_file("./shaders/simple.vert")
@@ -219,22 +239,16 @@ fn main() {
                 .link()
         };
 
-        unsafe { simple_shader.activate() }
-
         // Basic usage of shader helper:
         // The example code below creates a 'shader' object.
         // It which contains the field `.program_id` and the method `.activate()`.
         // The `.` in the path is relative to `Cargo.toml`.
         // This snippet is not enough to do the exercise, and will need to be modified (outside
         // of just using the correct path), but it only needs to be called once
-
-        /*
-        let simple_shader = unsafe {
-            shader::ShaderBuilder::new()
-                .attach_file("./path/to/simple/shader.file")
-                .link()
-        };
-        */
+        unsafe {
+            simple_shader.activate();
+            gl::BindVertexArray(my_vao);
+        }
 
         // Used to demonstrate keyboard handling for exercise 2.
         let mut _arbitrary_number = 0.0; // feel free to remove
@@ -296,7 +310,6 @@ fn main() {
                 gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
                 // == // Issue the necessary gl:: commands to draw your scene here
-                gl::BindVertexArray(my_vao);
                 gl::DrawElements(
                     gl::TRIANGLES,
                     indicies.len() as i32,
