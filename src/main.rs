@@ -8,15 +8,16 @@
 #![allow(unused_variables)]
 */
 extern crate nalgebra_glm as glm;
-use std::convert::TryInto;
-use std::mem::size_of_val;
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 use std::{mem, os::raw::c_void, ptr};
 
+mod obj_reader;
 mod shader;
+mod shape_generator;
 mod util;
 
+use glm::pi;
 use glutin::event::{
     DeviceEvent,
     ElementState::{Pressed, Released},
@@ -25,6 +26,8 @@ use glutin::event::{
     WindowEvent,
 };
 use glutin::event_loop::ControlFlow;
+use obj_reader::ObjReader;
+use shape_generator::ShapeGenerator;
 
 // initial window size
 const INITIAL_SCREEN_W: u32 = 800;
@@ -177,48 +180,8 @@ fn main() {
 
         // == // Set up your VAO around here
 
-        // TASK 2 a)
-        let n_triangle_rows = 3;
-        let width = 1.;
-        let height = 1.;
-
-        let t_width = width / n_triangle_rows as f32;
-        let t_height = height / n_triangle_rows as f32;
-
-        let n_triangles = n_triangle_rows * (n_triangle_rows + 1) / 2;
-        let n_vertex_rows = n_triangle_rows + 1;
-        let n_verticies = n_vertex_rows * (n_vertex_rows + 1) / 2;
-        let mut verticies = vec![0.; n_verticies * 3];
-        let mut indicies = vec![0; n_triangles * 3];
-
-        let vertex_row_start_y = height / 2.;
-        for vertex_row in 0..n_vertex_rows {
-            let vertex_row_f = vertex_row as f32;
-            let vertex_row_y = vertex_row_start_y - vertex_row_f * t_height;
-
-            let vertex_row_start_x = -t_width * vertex_row_f / 2.;
-
-            let vertex_row_index = if vertex_row == 0 {
-                0
-            } else {
-                (vertex_row + 1) * vertex_row / 2
-            };
-            for vertex in 0..(vertex_row + 1) {
-                let vertex_f = vertex as f32;
-                let vertex_index = vertex_row_index * 3 + vertex * 3;
-                verticies[0 + vertex_index] = vertex_row_start_x + vertex_f * t_width;
-                verticies[1 + vertex_index] = vertex_row_y;
-                verticies[2 + vertex_index] = 0.;
-
-                if vertex_row < n_vertex_rows - 1 {
-                    indicies[0 + vertex_index] = (vertex_row_index + vertex) as u32;
-                    indicies[1 + vertex_index] =
-                        (vertex_row_index + vertex_row + 1 + vertex) as u32;
-                    indicies[2 + vertex_index] =
-                        (vertex_row_index + vertex_row + 1 + vertex + 1) as u32;
-                }
-            }
-        }
+        // TASK 1 c)
+        // let (verticies, indicies) = ShapeGenerator::generate_n_force(3, 1., 1.);
 
         // TASK 2 a)
         // let verticies = vec![0.6, -0.8, -1.2, 0., 0.4, 0., -0.8, -0.2, 1.2];
@@ -229,26 +192,35 @@ fn main() {
         // let back_facing_indicies = vec![2, 1, 0]; // [1, 0, 2], [0, 2, 1]
         // indicies.splice(0..3, back_facing_indicies);
 
+        // TASK 3
+        // let (verticies, indicies) = ShapeGenerator::generate_circle(20, 0.5);
+        // let (verticies, indicies) = ShapeGenerator::generate_spiral(50, 0.05, 3., 1., 0.15);
+        // let (verticies, indicies) = ShapeGenerator::generate_square(2.0);
+        let (verticies, indicies) = ObjReader::read("./resources/monke.obj");
+        // let (verticies, indicies) = ShapeGenerator::generate_sine(100, 2., 0.19);
+
         let my_vao = unsafe { create_vao(&verticies, &indicies) };
 
         // == // Set up your shaders here
+
+        // uniform_time used for changing.frag
+        let mut uniform_time = 0.;
+
+        // Create shader object
         let simple_shader = unsafe {
             shader::ShaderBuilder::new()
                 .attach_file("./shaders/simple.vert")
-                .attach_file("./shaders/simple.frag")
+                .attach_file("./shaders/depth.frag")
                 .link()
         };
 
-        // Basic usage of shader helper:
-        // The example code below creates a 'shader' object.
-        // It which contains the field `.program_id` and the method `.activate()`.
-        // The `.` in the path is relative to `Cargo.toml`.
-        // This snippet is not enough to do the exercise, and will need to be modified (outside
-        // of just using the correct path), but it only needs to be called once
-        unsafe {
+        // Set bindings for shader, VAO and uniform variable
+        let uniform_time_location = unsafe {
             simple_shader.activate();
             gl::BindVertexArray(my_vao);
-        }
+
+            simple_shader.get_uniform_location("time")
+        };
 
         // Used to demonstrate keyboard handling for exercise 2.
         let mut _arbitrary_number = 0.0; // feel free to remove
@@ -310,6 +282,12 @@ fn main() {
                 gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
                 // == // Issue the necessary gl:: commands to draw your scene here
+
+                // Update uniform variables
+                uniform_time += delta_time;
+                gl::Uniform1f(uniform_time_location, uniform_time);
+
+                // Draw object
                 gl::DrawElements(
                     gl::TRIANGLES,
                     indicies.len() as i32,
