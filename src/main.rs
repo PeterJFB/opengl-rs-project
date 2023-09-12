@@ -210,7 +210,7 @@ fn main() {
         let simple_shader = unsafe {
             shader::ShaderBuilder::new()
                 .attach_file("./shaders/simple.vert")
-                .attach_file("./shaders/depth.frag")
+                .attach_file("./shaders/scary-monke.frag")
                 .link()
         };
 
