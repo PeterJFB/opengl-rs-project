@@ -27,6 +27,7 @@ use glutin::event::{
 };
 use glutin::event_loop::ControlFlow;
 use obj_reader::ObjReader;
+use rand::Rng;
 use shape_generator::ShapeGenerator;
 
 // initial window size
@@ -63,7 +64,7 @@ fn offset<T>(n: u32) -> *const c_void {
 // ptr::null()
 
 // == // Generate your VAO here
-unsafe fn create_vao(vertices: &Vec<f32>, indices: &Vec<u32>) -> u32 {
+unsafe fn create_vao(vertices: &Vec<f32>, indices: &Vec<u32>, colors: &Vec<f32>) -> u32 {
     // Generate a VAO and bind it
     let n_vao: gl::types::GLsizei = 1;
     let mut vao_ids = 0;
@@ -86,10 +87,37 @@ unsafe fn create_vao(vertices: &Vec<f32>, indices: &Vec<u32>) -> u32 {
         gl::STATIC_DRAW,
     );
 
-    // Configure a VAP for the data and enable it
+    // Configure a VAP for the vertex-position and enable it
     let vap_index = 0;
     gl::VertexAttribPointer(vap_index, 3, gl::FLOAT, gl::FALSE, 0, 0 as *const _);
     gl::EnableVertexAttribArray(vap_index);
+
+    // TASK 2.1 a)
+    // Generate a CBO for colors and bind it
+    let n_cbo = 1;
+    let mut cbo_ids = 0;
+
+    gl::GenBuffers(n_cbo, &mut cbo_ids);
+    gl::BindBuffer(gl::ARRAY_BUFFER, cbo_ids);
+
+    // Fill CBO with data
+    gl::BufferData(
+        gl::ARRAY_BUFFER,
+        byte_size_of_array(colors),
+        pointer_to_array(colors),
+        gl::STATIC_DRAW,
+    );
+
+    // Configure a VAP for the vertex-color and enable it
+    gl::VertexAttribPointer(
+        vap_index + 1,
+        4,
+        gl::FLOAT,
+        gl::TRUE,
+        0, // 3 * size_of::<f32>(),
+        0 as *const _,
+    );
+    gl::EnableVertexAttribArray(vap_index + 1);
 
     // Generate a IBO and bind it
     let n_ibo = 1;
@@ -180,26 +208,56 @@ fn main() {
 
         // == // Set up your VAO around here
 
-        // TASK 1 c)
-        // let (verticies, indicies) = ShapeGenerator::generate_n_force(3, 1., 1.);
+        // TASK 1.1 c)
+        // let (verticies, indicies) = ShapeGenerator::generate_n_force(2, 1., 1.);
 
-        // TASK 2 a)
+        // TASK 1.2 a)
         // let verticies = vec![0.6, -0.8, -1.2, 0., 0.4, 0., -0.8, -0.2, 1.2];
         // let indicies = vec![0, 1, 2];
 
-        // TASK 2 b)
+        // TASK 1.2 b)
         // let front_facing_indicies = vec![0, 1, 2]; // [1, 2, 0], [2, 0, 1]
         // let back_facing_indicies = vec![2, 1, 0]; // [1, 0, 2], [0, 2, 1]
         // indicies.splice(0..3, back_facing_indicies);
 
-        // TASK 3
+        // TASK 1.3
         // let (verticies, indicies) = ShapeGenerator::generate_circle(20, 0.5);
         // let (verticies, indicies) = ShapeGenerator::generate_spiral(50, 0.05, 3., 1., 0.15);
         // let (verticies, indicies) = ShapeGenerator::generate_square(2.0);
-        let (verticies, indicies) = ObjReader::read("./resources/monke.obj");
+        // let (verticies, indicies) = ObjReader::read("./resources/monke.obj");
         // let (verticies, indicies) = ShapeGenerator::generate_sine(100, 2., 0.19);
 
-        let my_vao = unsafe { create_vao(&verticies, &indicies) };
+        // TASK 2.1 b)
+        // let (verticies, indicies) = ShapeGenerator::generate_n_force(2, 1., 1.);
+        // let mut rng = rand::thread_rng();
+        // let mut colors = vec![];
+        // for _ in 0..verticies.len() {
+        //     colors = vec![colors, vec![rng.gen(), rng.gen(), rng.gen(), 1.]].concat();
+        // }
+
+        // TASK 2.2 a) b)
+
+        let (verticies, indicies) = ShapeGenerator::overlapping_triangles(1., 1., 0.2);
+        let mut colors = vec![0.; 9 * 4];
+        let alpha = 0.5;
+        for n in 0..3 {
+            // Create red, green and blue triangle
+            // 2 = closest, 0 = farthermost
+            let color = [
+                if n == 0 { 1. } else { 0. },
+                if n == 1 { 1. } else { 0. },
+                if n == 2 { 1. } else { 0. },
+                alpha,
+            ];
+            // Each triangle consist of 3 verticies, hence three splices
+            colors.splice((n * 12)..(n * 12 + 4), color);
+            colors.splice((n * 12 + 4)..(n * 12 + 8), color);
+            colors.splice((n * 12 + 8)..(n * 12 + 12), color);
+        }
+
+        println!("{}", colors[colors.len() - 1]);
+
+        let my_vao = unsafe { create_vao(&verticies, &indicies, &colors) };
 
         // == // Set up your shaders here
 
@@ -210,7 +268,7 @@ fn main() {
         let simple_shader = unsafe {
             shader::ShaderBuilder::new()
                 .attach_file("./shaders/simple.vert")
-                .attach_file("./shaders/scary-monke.frag")
+                .attach_file("./shaders/simple.frag")
                 .link()
         };
 
@@ -279,6 +337,7 @@ fn main() {
             unsafe {
                 // Clear the color and depth buffers
                 gl::ClearColor(0.035, 0.046, 0.078, 1.0); // night sky, full opacity
+                                                          // gl::ClearColor(0.3, 0.046, 0.078, 1.0); // night sky, full opacity
                 gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
                 // == // Issue the necessary gl:: commands to draw your scene here

@@ -193,4 +193,54 @@ impl ShapeGenerator {
 
         (verticies, indicies)
     }
+
+    pub fn overlapping_triangles(width: f32, height: f32, overlap: f32) -> (Vec<f32>, Vec<u32>) {
+        let mut verticies = vec![0.; 3 * 3 * 3];
+        // let mut indicies = vec![0; 3 * 3];
+        let indicies = (0..9).collect();
+        // let indicies = vec![6, 7, 8, 3, 4, 5, 0, 1, 2];
+
+        let t_width = width / 2.;
+        let t_height = height / 2.;
+
+        // Top left (Futherest)
+        let futherest_z = 0.2;
+        verticies[0] = -t_width / 2. + overlap / 2.;
+        verticies[1] = t_height;
+        verticies[2] = futherest_z;
+        verticies[3] = -t_width + overlap / 2.;
+        verticies[4] = 0.;
+        verticies[5] = futherest_z;
+        verticies[6] = 0. + overlap / 2.;
+        verticies[7] = 0.;
+        verticies[8] = futherest_z;
+
+        // Top right (Middle)
+        let middle_z = 0.1;
+        verticies[9] = t_width / 2. - overlap / 2.;
+        verticies[10] = t_height;
+        verticies[11] = middle_z;
+        verticies[12] = 0. - overlap / 2.;
+        verticies[13] = 0.;
+        verticies[14] = middle_z;
+        verticies[15] = t_width - overlap / 2.;
+        verticies[16] = 0.;
+        verticies[17] = middle_z;
+
+        // Bottom (Nearest)
+        let nearest_z = 0.0;
+        verticies[18] = 0.;
+        verticies[19] = 0. + overlap;
+        verticies[20] = nearest_z;
+        verticies[21] = -t_width / 2.;
+        verticies[22] = -t_height + overlap;
+        verticies[23] = nearest_z;
+        verticies[24] = t_width / 2.;
+        verticies[25] = -t_height + overlap;
+        verticies[26] = nearest_z;
+
+        // indicies.splice(0..3, (0..3).collect());
+
+        (verticies, indicies)
+    }
 }
