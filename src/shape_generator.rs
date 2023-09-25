@@ -36,7 +36,7 @@ impl ShapeGenerator {
                 let vertex_index = vertex_row_index * 3 + vertex * 3;
                 verticies[0 + vertex_index] = vertex_row_start_x + vertex_f * t_width;
                 verticies[1 + vertex_index] = vertex_row_y;
-                verticies[2 + vertex_index] = 0.;
+                verticies[2 + vertex_index] = 3.;
 
                 if vertex_row < n_vertex_rows - 1 {
                     indicies[0 + vertex_index] = (vertex_row_index + vertex) as u32;
@@ -196,15 +196,13 @@ impl ShapeGenerator {
 
     pub fn overlapping_triangles(width: f32, height: f32, overlap: f32) -> (Vec<f32>, Vec<u32>) {
         let mut verticies = vec![0.; 3 * 3 * 3];
-        // let mut indicies = vec![0; 3 * 3];
         let indicies = (0..9).collect();
-        // let indicies = vec![6, 7, 8, 3, 4, 5, 0, 1, 2];
 
         let t_width = width / 2.;
         let t_height = height / 2.;
 
         // Top left (Futherest)
-        let futherest_z = 0.2;
+        let futherest_z = 10.;
         verticies[0] = -t_width / 2. + overlap / 2.;
         verticies[1] = t_height;
         verticies[2] = futherest_z;
@@ -216,7 +214,7 @@ impl ShapeGenerator {
         verticies[8] = futherest_z;
 
         // Top right (Middle)
-        let middle_z = 0.1;
+        let middle_z = 5.;
         verticies[9] = t_width / 2. - overlap / 2.;
         verticies[10] = t_height;
         verticies[11] = middle_z;
@@ -228,7 +226,7 @@ impl ShapeGenerator {
         verticies[17] = middle_z;
 
         // Bottom (Nearest)
-        let nearest_z = 0.0;
+        let nearest_z = 2.;
         verticies[18] = 0.;
         verticies[19] = 0. + overlap;
         verticies[20] = nearest_z;
@@ -240,6 +238,24 @@ impl ShapeGenerator {
         verticies[26] = nearest_z;
 
         // indicies.splice(0..3, (0..3).collect());
+
+        (verticies, indicies)
+    }
+    pub fn flat_thing() -> (Vec<f32>, Vec<u32>) {
+        let mut verticies = vec![0.; 3 * 3];
+        let indicies = (0..3).collect();
+
+        verticies[0] = 0.;
+        verticies[1] = -0.5;
+        verticies[2] = 1.;
+
+        verticies[3] = 20.;
+        verticies[4] = -0.5;
+        verticies[5] = 50.;
+
+        verticies[6] = -20.;
+        verticies[7] = -0.5;
+        verticies[8] = 50.;
 
         (verticies, indicies)
     }

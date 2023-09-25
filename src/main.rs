@@ -60,6 +60,14 @@ fn offset<T>(n: u32) -> *const c_void {
     (n * mem::size_of::<T>() as u32) as *const T as *const c_void
 }
 
+struct Position {
+    x: f32,
+    y: f32,
+    z: f32,
+    pitch: f32,
+    yaw: f32,
+}
+
 // Get a null pointer (equivalent to an offset of 0)
 // ptr::null()
 
@@ -249,13 +257,21 @@ fn main() {
                 if n == 2 { 1. } else { 0. },
                 alpha,
             ];
+            let color2 = [
+                if n == 1 { 1. } else { 0. },
+                if n == 2 { 1. } else { 0. },
+                if n == 0 { 1. } else { 0. },
+                alpha,
+            ];
             // Each triangle consist of 3 verticies, hence three splices
             colors.splice((n * 12)..(n * 12 + 4), color);
-            colors.splice((n * 12 + 4)..(n * 12 + 8), color);
+            colors.splice((n * 12 + 4)..(n * 12 + 8), color2);
             colors.splice((n * 12 + 8)..(n * 12 + 12), color);
         }
 
-        println!("{}", colors[colors.len() - 1]);
+        // TASK 2.5 b)
+        // let (verticies, indicies) = ShapeGenerator::flat_thing();
+        // let colors = vec![1., 0., 0., 1., 0., 1., 0., 1., 0., 0., 1., 1.];
 
         let my_vao = unsafe { create_vao(&verticies, &indicies, &colors) };
 
@@ -263,7 +279,7 @@ fn main() {
 
         // uniform_time used for changing.frag
         let mut uniform_time = 0.;
-
+        let mut uniform_matrix: glm::Mat4;
         // Create shader object
         let simple_shader = unsafe {
             shader::ShaderBuilder::new()
@@ -273,12 +289,41 @@ fn main() {
         };
 
         // Set bindings for shader, VAO and uniform variable
-        let uniform_time_location = unsafe {
+        let (uniform_time_location, uniform_matrix_location) = unsafe {
             simple_shader.activate();
             gl::BindVertexArray(my_vao);
 
-            simple_shader.get_uniform_location("time")
+            (
+                simple_shader.get_uniform_location("time"),
+                simple_shader.get_uniform_location("matrix"),
+            )
         };
+
+        let fovy = 20.;
+        let near = 1.;
+        let far = 100.;
+
+        let mut camera_pos = Position {
+            x: 0.,
+            y: 0.,
+            z: 0.,
+            pitch: 0.,
+            yaw: 0.,
+        };
+
+        let mut perspective: glm::Mat4;
+        let flip_z: glm::Mat4 = glm::scaling(&glm::vec3(1., 1., -1.));
+        let mut translate_camera: glm::Mat4 =
+            glm::translation(&glm::vec3(-camera_pos.x, camera_pos.y, camera_pos.z));
+        let mut pitch_camera: glm::Mat4 = glm::rotation(camera_pos.pitch, &glm::vec3(1., 0., 0.));
+        let mut yaw_camera: glm::Mat4 = glm::rotation(camera_pos.yaw, &glm::vec3(0., 1., 0.));
+
+        let mut view_direction = glm::vec3(
+            (camera_pos.yaw as f64).sin() as f32,
+            (camera_pos.pitch as f64).sin() as f32,
+            (camera_pos.yaw as f64).cos() as f32,
+        );
+        let mut normal_view_direction = glm::cross(&view_direction, &glm::vec3(0., -1., 0.));
 
         // Used to demonstrate keyboard handling for exercise 2.
         let mut _arbitrary_number = 0.0; // feel free to remove
@@ -310,13 +355,111 @@ fn main() {
             if let Ok(keys) = pressed_keys.lock() {
                 for key in keys.iter() {
                     match key {
-                        // The `VirtualKeyCode` enum is defined here:
-                        //    https://docs.rs/winit/0.25.0/winit/event/enum.VirtualKeyCode.html
+                        // Movement along camera direction
                         VirtualKeyCode::A => {
-                            _arbitrary_number += delta_time;
+                            camera_pos.x -= normal_view_direction.x * delta_time;
+                            camera_pos.y -= normal_view_direction.y * delta_time;
+                            camera_pos.z -= normal_view_direction.z * delta_time;
+                            translate_camera = glm::translation(&glm::vec3(
+                                -camera_pos.x,
+                                -camera_pos.y,
+                                -camera_pos.z,
+                            ));
                         }
                         VirtualKeyCode::D => {
-                            _arbitrary_number -= delta_time;
+                            camera_pos.x += normal_view_direction.x * delta_time;
+                            camera_pos.y += normal_view_direction.y * delta_time;
+                            camera_pos.z += normal_view_direction.z * delta_time;
+                            translate_camera = glm::translation(&glm::vec3(
+                                -camera_pos.x,
+                                -camera_pos.y,
+                                -camera_pos.z,
+                            ));
+                        }
+                        VirtualKeyCode::W => {
+                            camera_pos.x += view_direction.x * delta_time;
+                            camera_pos.y += view_direction.y * delta_time;
+                            camera_pos.z += view_direction.z * delta_time;
+                            translate_camera = glm::translation(&glm::vec3(
+                                -camera_pos.x,
+                                -camera_pos.y,
+                                -camera_pos.z,
+                            ));
+                        }
+                        VirtualKeyCode::S => {
+                            camera_pos.x -= view_direction.x * delta_time;
+                            camera_pos.y -= view_direction.y * delta_time;
+                            camera_pos.z -= view_direction.z * delta_time;
+                            translate_camera = glm::translation(&glm::vec3(
+                                -camera_pos.x,
+                                -camera_pos.y,
+                                -camera_pos.z,
+                            ));
+                        }
+                        VirtualKeyCode::Space => {
+                            camera_pos.y += 1. * delta_time;
+                            translate_camera = glm::translation(&glm::vec3(
+                                -camera_pos.x,
+                                -camera_pos.y,
+                                -camera_pos.z,
+                            ));
+                        }
+                        VirtualKeyCode::LShift => {
+                            camera_pos.y -= 1. * delta_time;
+                            translate_camera = glm::translation(&glm::vec3(
+                                -camera_pos.x,
+                                -camera_pos.y,
+                                -camera_pos.z,
+                            ));
+                        }
+                        VirtualKeyCode::Right => {
+                            camera_pos.yaw += 1. * delta_time;
+
+                            yaw_camera = glm::rotation(-camera_pos.yaw, &glm::vec3(0., 1., 0.));
+                            view_direction = glm::vec3(
+                                (camera_pos.yaw as f64).sin() as f32,
+                                (camera_pos.pitch as f64).sin() as f32,
+                                (camera_pos.yaw as f64).cos() as f32,
+                            );
+                            normal_view_direction =
+                                glm::cross(&view_direction, &glm::vec3(0., -1., 0.));
+                        }
+                        VirtualKeyCode::Left => {
+                            camera_pos.yaw -= 1. * delta_time;
+
+                            yaw_camera = glm::rotation(-camera_pos.yaw, &glm::vec3(0., 1., 0.));
+                            view_direction = glm::vec3(
+                                (camera_pos.yaw as f64).sin() as f32,
+                                (camera_pos.pitch as f64).sin() as f32,
+                                (camera_pos.yaw as f64).cos() as f32,
+                            );
+                            normal_view_direction =
+                                glm::cross(&view_direction, &glm::vec3(0., -1., 0.));
+                        }
+                        VirtualKeyCode::Up => {
+                            camera_pos.pitch += 1. * delta_time;
+
+                            pitch_camera = glm::rotation(camera_pos.pitch, &glm::vec3(1., 0., 0.));
+
+                            view_direction = glm::vec3(
+                                (camera_pos.yaw as f64).sin() as f32,
+                                (camera_pos.pitch as f64).sin() as f32,
+                                (camera_pos.yaw as f64).cos() as f32,
+                            );
+                            normal_view_direction =
+                                glm::cross(&view_direction, &glm::vec3(0., -1., 0.));
+                        }
+                        VirtualKeyCode::Down => {
+                            camera_pos.pitch -= 1. * delta_time;
+
+                            pitch_camera = glm::rotation(camera_pos.pitch, &glm::vec3(1., 0., 0.));
+                            view_direction = glm::vec3(
+                                (camera_pos.yaw as f64).sin() as f32,
+                                (camera_pos.pitch as f64).sin() as f32,
+                                (camera_pos.yaw as f64).cos() as f32,
+                            );
+                            normal_view_direction =
+                                glm::cross(&view_direction, &glm::vec3(0., -1., 0.));
                         }
 
                         // default handler:
@@ -341,10 +484,25 @@ fn main() {
                 gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
                 // == // Issue the necessary gl:: commands to draw your scene here
+                perspective = glm::perspective(window_aspect_ratio, fovy, near, far);
 
                 // Update uniform variables
                 uniform_time += delta_time;
+
+                uniform_matrix = glm::identity();
+                uniform_matrix *= perspective;
+                uniform_matrix *= flip_z;
+                uniform_matrix *= pitch_camera;
+                uniform_matrix *= yaw_camera;
+                uniform_matrix *= translate_camera;
+
                 gl::Uniform1f(uniform_time_location, uniform_time);
+                gl::UniformMatrix4fv(
+                    uniform_matrix_location,
+                    1,
+                    gl::FALSE,
+                    uniform_matrix.as_ptr(),
+                );
 
                 // Draw object
                 gl::DrawElements(
