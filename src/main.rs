@@ -8,13 +8,18 @@
 #![allow(unused_variables)]
 */
 extern crate nalgebra_glm as glm;
+use std::mem::ManuallyDrop;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 use std::{mem, os::raw::c_void, ptr};
 
+mod mesh;
 mod obj_reader;
+mod scene_graph;
 mod shader;
 mod shape_generator;
+mod toolbox;
 mod util;
 
 use glm::pi;
@@ -28,6 +33,7 @@ use glutin::event::{
 use glutin::event_loop::ControlFlow;
 use obj_reader::ObjReader;
 use rand::Rng;
+use scene_graph::SceneNode;
 use shape_generator::ShapeGenerator;
 
 // initial window size
@@ -68,11 +74,27 @@ struct Position {
     yaw: f32,
 }
 
+struct HelicopterNode {
+    body: ManuallyDrop<Pin<Box<SceneNode>>>,
+    door: ManuallyDrop<Pin<Box<SceneNode>>>,
+    main_rotor: ManuallyDrop<Pin<Box<SceneNode>>>,
+    tail_rotor: ManuallyDrop<Pin<Box<SceneNode>>>,
+}
+
+static mut uniform_time_location: i32 = 0;
+static mut uniform_matrix_location: i32 = 0;
+static mut uniform_normal_matrix_location: i32 = 0;
+
 // Get a null pointer (equivalent to an offset of 0)
 // ptr::null()
 
 // == // Generate your VAO here
-unsafe fn create_vao(vertices: &Vec<f32>, indices: &Vec<u32>, colors: &Vec<f32>) -> u32 {
+unsafe fn create_vao(
+    vertices: &Vec<f32>,
+    indices: &Vec<u32>,
+    colors: &Vec<f32>,
+    normals: &Vec<f32>,
+) -> u32 {
     // Generate a VAO and bind it
     let n_vao: gl::types::GLsizei = 1;
     let mut vao_ids = 0;
@@ -97,7 +119,14 @@ unsafe fn create_vao(vertices: &Vec<f32>, indices: &Vec<u32>, colors: &Vec<f32>)
 
     // Configure a VAP for the vertex-position and enable it
     let vap_index = 0;
-    gl::VertexAttribPointer(vap_index, 3, gl::FLOAT, gl::FALSE, 0, 0 as *const _);
+    gl::VertexAttribPointer(
+        vap_index,
+        3,
+        gl::FLOAT,
+        gl::FALSE,
+        0 * size_of::<f32>(),
+        offset::<f32>(0),
+    );
     gl::EnableVertexAttribArray(vap_index);
 
     // TASK 2.1 a)
@@ -121,11 +150,41 @@ unsafe fn create_vao(vertices: &Vec<f32>, indices: &Vec<u32>, colors: &Vec<f32>)
         vap_index + 1,
         4,
         gl::FLOAT,
-        gl::TRUE,
-        0, // 3 * size_of::<f32>(),
-        0 as *const _,
+        gl::FALSE,
+        0 * size_of::<f32>(),
+        offset::<f32>(0),
     );
     gl::EnableVertexAttribArray(vap_index + 1);
+
+    // TASK 3.1 b)
+
+    // Generate a NBO for colors and bind it
+    if normals.len() > 0 {
+        let n_nbo = 1;
+        let mut nbo_ids = 0;
+
+        gl::GenBuffers(n_nbo, &mut nbo_ids);
+        gl::BindBuffer(gl::ARRAY_BUFFER, nbo_ids);
+
+        // Fill NBO with data
+        gl::BufferData(
+            gl::ARRAY_BUFFER,
+            byte_size_of_array(normals),
+            pointer_to_array(normals),
+            gl::STATIC_DRAW,
+        );
+
+        // Configure a VAP for the vertex-color and enable it
+        gl::VertexAttribPointer(
+            vap_index + 2,
+            3,
+            gl::FLOAT,
+            gl::FALSE,
+            0 * size_of::<f32>(),
+            offset::<f32>(0),
+        );
+        gl::EnableVertexAttribArray(vap_index + 2);
+    }
 
     // Generate a IBO and bind it
     let n_ibo = 1;
@@ -245,63 +304,121 @@ fn main() {
 
         // TASK 2.2 a) b)
 
-        let (verticies, indicies) = ShapeGenerator::overlapping_triangles(1., 1., 0.2);
-        let mut colors = vec![0.; 9 * 4];
-        let alpha = 0.5;
-        for n in 0..3 {
-            // Create red, green and blue triangle
-            // 2 = closest, 0 = farthermost
-            let color = [
-                if n == 0 { 1. } else { 0. },
-                if n == 1 { 1. } else { 0. },
-                if n == 2 { 1. } else { 0. },
-                alpha,
-            ];
-            let color2 = [
-                if n == 1 { 1. } else { 0. },
-                if n == 2 { 1. } else { 0. },
-                if n == 0 { 1. } else { 0. },
-                alpha,
-            ];
-            // Each triangle consist of 3 verticies, hence three splices
-            colors.splice((n * 12)..(n * 12 + 4), color);
-            colors.splice((n * 12 + 4)..(n * 12 + 8), color2);
-            colors.splice((n * 12 + 8)..(n * 12 + 12), color);
-        }
+        // let (verticies, indicies) = ShapeGenerator::overlapping_triangles(1., 1., 0.2);
+        // let mut colors = vec![0.; 9 * 4];
+        // let alpha = 0.5;
+        // for n in 0..3 {
+        //     // Create red, green and blue triangle
+        //     // 2 = closest, 0 = farthermost
+        //     let color = [
+        //         if n == 0 { 1. } else { 0. },
+        //         if n == 1 { 1. } else { 0. },
+        //         if n == 2 { 1. } else { 0. },
+        //         alpha,
+        //     ];
+        //     let color2 = [
+        //         if n == 1 { 1. } else { 0. },
+        //         if n == 2 { 1. } else { 0. },
+        //         if n == 0 { 1. } else { 0. },
+        //         alpha,
+        //     ];
+        //     // Each triangle consist of 3 verticies, hence three splices
+        //     colors.splice((n * 12)..(n * 12 + 4), color);
+        //     colors.splice((n * 12 + 4)..(n * 12 + 8), color2);
+        //     colors.splice((n * 12 + 8)..(n * 12 + 12), color);
+        // }
 
         // TASK 2.5 b)
         // let (verticies, indicies) = ShapeGenerator::flat_thing();
         // let colors = vec![1., 0., 0., 1., 0., 1., 0., 1., 0., 0., 1., 1.];
 
-        let my_vao = unsafe { create_vao(&verticies, &indicies, &colors) };
+        // TASK 3.1 a)
+        let terrain_mesh = mesh::Terrain::load("./resources/lunarsurface.obj");
+
+        unsafe fn create_vao_from_mesh(m: &mesh::Mesh) -> u32 {
+            create_vao(&m.vertices, &m.indices, &m.colors, &m.normals)
+        }
+
+        let terrain_vao = unsafe { create_vao_from_mesh(&terrain_mesh) };
+
+        // let colors = vec![0.5, 0.5, 0.5, 1.];
+        // let normals = Vec::new();
+        // let my_vao = unsafe { create_vao(&verticies, &indicies, &colors, &normals) };
+
+        // TASK 3.2 a)
+        // TASK 3.2 b)
+
+        let mut terrain_node = SceneNode::from_vao(terrain_vao, terrain_mesh.indices.len() as i32);
+
+        let helicopter_mesh = mesh::Helicopter::load("./resources/helicopter.obj");
+
+        let heli_body_vao = unsafe { create_vao_from_mesh(&helicopter_mesh.body) };
+        let heli_door_vao = unsafe { create_vao_from_mesh(&helicopter_mesh.door) };
+        let heli_main_rotor_vao = unsafe { create_vao_from_mesh(&helicopter_mesh.main_rotor) };
+        let heli_tail_rotor_vao = unsafe { create_vao_from_mesh(&helicopter_mesh.tail_rotor) };
+
+        // Create array of helicopters from vao
+        let mut helicopter_nodes: Vec<HelicopterNode> = Vec::new();
+        for _ in 0..5 {
+            let mut heli_body_node =
+                SceneNode::from_vao(heli_body_vao, helicopter_mesh.body.indices.len() as i32);
+            let mut heli_door_node =
+                SceneNode::from_vao(heli_door_vao, helicopter_mesh.door.indices.len() as i32);
+            let mut heli_main_rotor_node = SceneNode::from_vao(
+                heli_main_rotor_vao,
+                helicopter_mesh.main_rotor.indices.len() as i32,
+            );
+            let mut heli_tail_rotor_node = SceneNode::from_vao(
+                heli_tail_rotor_vao,
+                helicopter_mesh.tail_rotor.indices.len() as i32,
+            );
+            heli_tail_rotor_node.reference_point = glm::vec3(0.35, 2.3, 10.4);
+
+            heli_body_node.add_child(&mut heli_door_node);
+            heli_body_node.add_child(&mut heli_main_rotor_node);
+            heli_body_node.add_child(&mut heli_tail_rotor_node);
+
+            helicopter_nodes.push(HelicopterNode {
+                body: heli_body_node,
+                door: heli_door_node,
+                main_rotor: heli_main_rotor_node,
+                tail_rotor: heli_tail_rotor_node,
+            });
+        }
+
+        helicopter_nodes
+            .iter()
+            .for_each(|h| terrain_node.add_child(&h.body));
+
+        let mut scene_node = SceneNode::new();
+        scene_node.add_child(&terrain_node);
 
         // == // Set up your shaders here
 
-        // uniform_time used for changing.frag
-        let mut uniform_time = 0.;
-        let mut uniform_matrix: glm::Mat4;
         // Create shader object
         let simple_shader = unsafe {
             shader::ShaderBuilder::new()
                 .attach_file("./shaders/simple.vert")
-                .attach_file("./shaders/simple.frag")
+                .attach_file("./shaders/sunlight.frag")
                 .link()
         };
 
         // Set bindings for shader, VAO and uniform variable
-        let (uniform_time_location, uniform_matrix_location) = unsafe {
+        unsafe {
             simple_shader.activate();
-            gl::BindVertexArray(my_vao);
+            // gl::BindVertexArray(my_vao);
 
-            (
-                simple_shader.get_uniform_location("time"),
-                simple_shader.get_uniform_location("matrix"),
-            )
+            // Used by changing.frag
+            uniform_time_location = simple_shader.get_uniform_location("time");
+
+            uniform_matrix_location = simple_shader.get_uniform_location("matrix");
+            uniform_normal_matrix_location = simple_shader.get_uniform_location("normal_matrix");
         };
 
+        // Perspective projection properties
         let fovy = 20.;
         let near = 1.;
-        let far = 100.;
+        let far = 1000.;
 
         let mut camera_pos = Position {
             x: 0.,
@@ -312,21 +429,80 @@ fn main() {
         };
 
         let mut perspective: glm::Mat4;
-        let flip_z: glm::Mat4 = glm::scaling(&glm::vec3(1., 1., -1.));
+        let move_z: glm::Mat4 = glm::translation(&glm::vec3(0., 0., 0.));
         let mut translate_camera: glm::Mat4 =
-            glm::translation(&glm::vec3(-camera_pos.x, camera_pos.y, camera_pos.z));
+            glm::translation(&glm::vec3(-camera_pos.x, -camera_pos.y, -camera_pos.z));
         let mut pitch_camera: glm::Mat4 = glm::rotation(camera_pos.pitch, &glm::vec3(1., 0., 0.));
         let mut yaw_camera: glm::Mat4 = glm::rotation(camera_pos.yaw, &glm::vec3(0., 1., 0.));
 
         let mut view_direction = glm::vec3(
             (camera_pos.yaw as f64).sin() as f32,
             (camera_pos.pitch as f64).sin() as f32,
-            (camera_pos.yaw as f64).cos() as f32,
+            -(camera_pos.yaw as f64).cos() as f32,
         );
-        let mut normal_view_direction = glm::cross(&view_direction, &glm::vec3(0., -1., 0.));
+        let mut normal_view_direction = glm::cross(&view_direction, &glm::vec3(0., 1., 0.));
+        let movement_speed = 10.;
 
-        // Used to demonstrate keyboard handling for exercise 2.
-        let mut _arbitrary_number = 0.0; // feel free to remove
+        unsafe fn draw_scene(
+            node: &scene_graph::SceneNode,
+            view_projection_matrix: &glm::Mat4,
+            transformation_so_far: &glm::Mat4,
+        ) {
+            // Perform any logic needed before drawing the node
+            let position_transformation = glm::translation(&glm::vec3(
+                node.position.x,
+                node.position.y,
+                node.position.z,
+            ));
+
+            let rotation_transformation = // Comment here to get nice formatting
+                glm::translation(&glm::vec3(
+                    node.reference_point.x,
+                    node.reference_point.y,
+                    node.reference_point.z,
+                )) // Comment there to get nice formatting
+                * glm::rotation(node.rotation.x, &glm::vec3(1., 0., 0.))
+                * glm::rotation(node.rotation.y, &glm::vec3(0., 1., 0.))
+                * glm::rotation(node.rotation.z, &glm::vec3(0., 0., 1.))
+                * glm::translation(&glm::vec3(
+                    -node.reference_point.x,
+                    -node.reference_point.y,
+                    -node.reference_point.z,
+                ));
+
+            let next_transformation: glm::Mat4 =
+                transformation_so_far * position_transformation * rotation_transformation;
+
+            // Check if node is drawable, if so: set uniforms, bind VAO and draw VAO
+            if node.vao_id != 0 {
+                let uniform_matrix = view_projection_matrix * next_transformation;
+                gl::UniformMatrix4fv(
+                    uniform_matrix_location,
+                    1,
+                    gl::FALSE,
+                    uniform_matrix.as_ptr(),
+                );
+
+                gl::UniformMatrix4fv(
+                    uniform_normal_matrix_location,
+                    1,
+                    gl::FALSE,
+                    next_transformation.as_ptr(),
+                );
+
+                gl::BindVertexArray(node.vao_id);
+                gl::DrawElements(
+                    gl::TRIANGLES,
+                    node.index_count,
+                    gl::UNSIGNED_INT,
+                    0 as *const _,
+                )
+            }
+            // Recurse
+            for &child in &node.children {
+                draw_scene(&*child, view_projection_matrix, &next_transformation);
+            }
+        }
 
         // The main rendering loop
         let first_frame_time = std::time::Instant::now();
@@ -357,9 +533,9 @@ fn main() {
                     match key {
                         // Movement along camera direction
                         VirtualKeyCode::A => {
-                            camera_pos.x -= normal_view_direction.x * delta_time;
-                            camera_pos.y -= normal_view_direction.y * delta_time;
-                            camera_pos.z -= normal_view_direction.z * delta_time;
+                            camera_pos.x -= normal_view_direction.x * delta_time * movement_speed;
+                            camera_pos.y -= normal_view_direction.y * delta_time * movement_speed;
+                            camera_pos.z -= normal_view_direction.z * delta_time * movement_speed;
                             translate_camera = glm::translation(&glm::vec3(
                                 -camera_pos.x,
                                 -camera_pos.y,
@@ -367,9 +543,9 @@ fn main() {
                             ));
                         }
                         VirtualKeyCode::D => {
-                            camera_pos.x += normal_view_direction.x * delta_time;
-                            camera_pos.y += normal_view_direction.y * delta_time;
-                            camera_pos.z += normal_view_direction.z * delta_time;
+                            camera_pos.x += normal_view_direction.x * delta_time * movement_speed;
+                            camera_pos.y += normal_view_direction.y * delta_time * movement_speed;
+                            camera_pos.z += normal_view_direction.z * delta_time * movement_speed;
                             translate_camera = glm::translation(&glm::vec3(
                                 -camera_pos.x,
                                 -camera_pos.y,
@@ -377,9 +553,9 @@ fn main() {
                             ));
                         }
                         VirtualKeyCode::W => {
-                            camera_pos.x += view_direction.x * delta_time;
-                            camera_pos.y += view_direction.y * delta_time;
-                            camera_pos.z += view_direction.z * delta_time;
+                            camera_pos.x += view_direction.x * delta_time * movement_speed;
+                            camera_pos.y += view_direction.y * delta_time * movement_speed;
+                            camera_pos.z += view_direction.z * delta_time * movement_speed;
                             translate_camera = glm::translation(&glm::vec3(
                                 -camera_pos.x,
                                 -camera_pos.y,
@@ -387,9 +563,9 @@ fn main() {
                             ));
                         }
                         VirtualKeyCode::S => {
-                            camera_pos.x -= view_direction.x * delta_time;
-                            camera_pos.y -= view_direction.y * delta_time;
-                            camera_pos.z -= view_direction.z * delta_time;
+                            camera_pos.x -= view_direction.x * delta_time * movement_speed;
+                            camera_pos.y -= view_direction.y * delta_time * movement_speed;
+                            camera_pos.z -= view_direction.z * delta_time * movement_speed;
                             translate_camera = glm::translation(&glm::vec3(
                                 -camera_pos.x,
                                 -camera_pos.y,
@@ -397,7 +573,7 @@ fn main() {
                             ));
                         }
                         VirtualKeyCode::Space => {
-                            camera_pos.y += 1. * delta_time;
+                            camera_pos.y += 1. * delta_time * movement_speed;
                             translate_camera = glm::translation(&glm::vec3(
                                 -camera_pos.x,
                                 -camera_pos.y,
@@ -405,7 +581,7 @@ fn main() {
                             ));
                         }
                         VirtualKeyCode::LShift => {
-                            camera_pos.y -= 1. * delta_time;
+                            camera_pos.y -= 1. * delta_time * movement_speed;
                             translate_camera = glm::translation(&glm::vec3(
                                 -camera_pos.x,
                                 -camera_pos.y,
@@ -415,51 +591,51 @@ fn main() {
                         VirtualKeyCode::Right => {
                             camera_pos.yaw += 1. * delta_time;
 
-                            yaw_camera = glm::rotation(-camera_pos.yaw, &glm::vec3(0., 1., 0.));
+                            yaw_camera = glm::rotation(camera_pos.yaw, &glm::vec3(0., 1., 0.));
                             view_direction = glm::vec3(
                                 (camera_pos.yaw as f64).sin() as f32,
                                 (camera_pos.pitch as f64).sin() as f32,
-                                (camera_pos.yaw as f64).cos() as f32,
+                                -(camera_pos.yaw as f64).cos() as f32,
                             );
                             normal_view_direction =
-                                glm::cross(&view_direction, &glm::vec3(0., -1., 0.));
+                                glm::cross(&view_direction, &glm::vec3(0., 1., 0.));
                         }
                         VirtualKeyCode::Left => {
                             camera_pos.yaw -= 1. * delta_time;
 
-                            yaw_camera = glm::rotation(-camera_pos.yaw, &glm::vec3(0., 1., 0.));
+                            yaw_camera = glm::rotation(camera_pos.yaw, &glm::vec3(0., 1., 0.));
                             view_direction = glm::vec3(
                                 (camera_pos.yaw as f64).sin() as f32,
                                 (camera_pos.pitch as f64).sin() as f32,
-                                (camera_pos.yaw as f64).cos() as f32,
+                                -(camera_pos.yaw as f64).cos() as f32,
                             );
                             normal_view_direction =
-                                glm::cross(&view_direction, &glm::vec3(0., -1., 0.));
+                                glm::cross(&view_direction, &glm::vec3(0., 1., 0.));
                         }
                         VirtualKeyCode::Up => {
                             camera_pos.pitch += 1. * delta_time;
 
-                            pitch_camera = glm::rotation(camera_pos.pitch, &glm::vec3(1., 0., 0.));
+                            pitch_camera = glm::rotation(-camera_pos.pitch, &glm::vec3(1., 0., 0.));
 
                             view_direction = glm::vec3(
                                 (camera_pos.yaw as f64).sin() as f32,
                                 (camera_pos.pitch as f64).sin() as f32,
-                                (camera_pos.yaw as f64).cos() as f32,
+                                -(camera_pos.yaw as f64).cos() as f32,
                             );
                             normal_view_direction =
-                                glm::cross(&view_direction, &glm::vec3(0., -1., 0.));
+                                glm::cross(&view_direction, &glm::vec3(0., 1., 0.));
                         }
                         VirtualKeyCode::Down => {
                             camera_pos.pitch -= 1. * delta_time;
 
-                            pitch_camera = glm::rotation(camera_pos.pitch, &glm::vec3(1., 0., 0.));
+                            pitch_camera = glm::rotation(-camera_pos.pitch, &glm::vec3(1., 0., 0.));
                             view_direction = glm::vec3(
                                 (camera_pos.yaw as f64).sin() as f32,
                                 (camera_pos.pitch as f64).sin() as f32,
-                                (camera_pos.yaw as f64).cos() as f32,
+                                -(camera_pos.yaw as f64).cos() as f32,
                             );
                             normal_view_direction =
-                                glm::cross(&view_direction, &glm::vec3(0., -1., 0.));
+                                glm::cross(&view_direction, &glm::vec3(0., 1., 0.));
                         }
 
                         // default handler:
@@ -478,43 +654,47 @@ fn main() {
             // == // Please compute camera transforms here (exercise 2 & 3)
 
             unsafe {
+                // heli_body_node.rotation.y = 0.5 * elapsed;
+
+                let helicoper_nodes_n = helicopter_nodes.len();
+
+                for (i, h) in helicopter_nodes.iter_mut().enumerate() {
+                    let lap = 2. * std::f32::consts::PI;
+                    let heading = toolbox::simple_heading_animation(
+                        elapsed + lap / (helicoper_nodes_n as f32) * (i as f32),
+                    );
+
+                    h.body.position.x = heading.x;
+                    h.body.position.z = heading.z;
+                    h.body.rotation.x = heading.pitch;
+                    h.body.rotation.z = heading.roll;
+                    h.body.rotation.y = heading.yaw;
+
+                    h.main_rotor.rotation.y = 10. * elapsed;
+                    h.tail_rotor.rotation.x = 10. * elapsed;
+                }
+
                 // Clear the color and depth buffers
                 gl::ClearColor(0.035, 0.046, 0.078, 1.0); // night sky, full opacity
-                                                          // gl::ClearColor(0.3, 0.046, 0.078, 1.0); // night sky, full opacity
                 gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
                 // == // Issue the necessary gl:: commands to draw your scene here
                 perspective = glm::perspective(window_aspect_ratio, fovy, near, far);
 
                 // Update uniform variables
-                uniform_time += delta_time;
+                perspective *= pitch_camera;
+                perspective *= yaw_camera;
+                perspective *= translate_camera;
+                perspective *= move_z;
 
-                uniform_matrix = glm::identity();
-                uniform_matrix *= perspective;
-                uniform_matrix *= flip_z;
-                uniform_matrix *= pitch_camera;
-                uniform_matrix *= yaw_camera;
-                uniform_matrix *= translate_camera;
+                gl::Uniform1f(uniform_time_location, elapsed);
+                // gl::UniformMatrix4fv(uniform_matrix_location, 1, gl::FALSE, perspective.as_ptr());
 
-                gl::Uniform1f(uniform_time_location, uniform_time);
-                gl::UniformMatrix4fv(
-                    uniform_matrix_location,
-                    1,
-                    gl::FALSE,
-                    uniform_matrix.as_ptr(),
-                );
+                draw_scene(&scene_node, &perspective, &glm::identity());
 
-                // Draw object
-                gl::DrawElements(
-                    gl::TRIANGLES,
-                    indicies.len() as i32,
-                    gl::UNSIGNED_INT,
-                    0 as *const _,
-                );
+                // Display the new color buffer on the display
+                context.swap_buffers().unwrap(); // we use "double buffering" to avoid artifacts
             }
-
-            // Display the new color buffer on the display
-            context.swap_buffers().unwrap(); // we use "double buffering" to avoid artifacts
         }
     });
 
