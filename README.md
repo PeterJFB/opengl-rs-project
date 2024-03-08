@@ -1,17 +1,27 @@
+# opengl-rs-project
+
+![](./example.png)
+
+A relatively cluttered opengl school project, where we created tools to do everything from rendering triangles to parse and rig .obj files.
+
+For some example renders, see [Submission PDFs](./Assignment%20deliveries/)
+
+Look at commits to see who has contributed what, or see [this comparison](https://github.com/PeterJFB/opengl-rs-project/compare/initial-fork...master)
+
+<details><summary>Old readme:</summary>
+
 # Gloom-rs
 
 To get started, make sure you have `git`, `cargo` and, `rustc` installed and available.
 
-	git clone https://github.com/pbsds/gloom-rs
-	cd gloom-rs
-	rustup override set nightly
-	cargo run
-
+    git clone https://github.com/pbsds/gloom-rs
+    cd gloom-rs
+    rustup override set nightly
+    cargo run
 
 ## GLM
 
-We use a variant of GLM known as [nalgebra-glm](https://docs.rs/nalgebra-glm/0.15.0/nalgebra_glm/), which differs *slightly* from the standard GLM library.
-
+We use a variant of GLM known as [nalgebra-glm](https://docs.rs/nalgebra-glm/0.15.0/nalgebra_glm/), which differs _slightly_ from the standard GLM library.
 
 ## Report
 
@@ -25,22 +35,24 @@ Make sure it works before using it to write your report.
 
 We want the following files and folders to be delivered in a ZIP file:
 
-* `resources`
-* `shaders`
-* `src`
-* `Cargo.lock`
-* `Cargo.toml`
+- `resources`
+- `shaders`
+- `src`
+- `Cargo.lock`
+- `Cargo.toml`
 
 **Important:** Do not include the `target` folder!
 
 To automatically make an archive (`source.zip`) ready for uploading to blackboard:
 
-* Make sure any extra assets or resources you have might have added are located in the `resources` folder
-* Then run either:
-	* `create_code_archive_for_blackboard_LINUX.sh`
-	* `create_code_archive_for_blackboard_WINDOWS.bat`.
+- Make sure any extra assets or resources you have might have added are located in the `resources` folder
+- Then run either:
+  - `create_code_archive_for_blackboard_LINUX.sh`
+  - `create_code_archive_for_blackboard_WINDOWS.bat`.
 
 This script will explicitly ignore the `target` folder, and two files given as a handout for exercise 3, to save space:
 
-* `resources/helicopter.obj`
-* `resources/lunarsurface.obj`
+- `resources/helicopter.obj`
+- `resources/lunarsurface.obj`
+
+</details>
